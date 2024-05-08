@@ -1,0 +1,240 @@
+# Data Cleaning
+
+#Data from Alex The Analyst GitHub
+#https://github.com/AlexTheAnalyst/MySQL-YouTube-Series/blob/main/layoffs.csv
+
+SELECT * 
+FROM world_layoffs.layoffs;
+
+#Create a table to safe the raw data
+CREATE TABLE world_layoffs.raw_layoffs
+LIKE world_layoffs.layoffs;
+
+INSERT raw_layoffs
+SELECT * FROM world_layoffs.layoffs;
+
+
+#In this porject will follow this step:
+# 1. check for duplicates and remove any
+# 2. standardize data and fix errors
+# 3. Look at null values and see what 
+# 4. remove any columns and rows that are not necessary
+
+# 1. Remove Duplicates
+
+# First let's check for duplicates
+
+SELECT *
+FROM world_layoffs.layoffs
+;
+
+SELECT company, industry, total_laid_off,`date`,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, industry, total_laid_off,`date`) AS row_num
+	FROM 
+		world_layoffs.layoffs;
+
+
+
+SELECT *
+FROM (
+	SELECT company, industry, total_laid_off,`date`,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, industry, total_laid_off,`date`
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs
+) duplicates
+WHERE 
+	row_num > 1;
+    
+# let's just look at oda to confirm
+SELECT *
+FROM world_layoffs.layoffs
+WHERE company = 'Oda'
+;
+
+# Eliminte real duplicates 
+SELECT *
+FROM (
+	SELECT company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs
+) duplicates
+WHERE 
+	row_num > 1;
+
+# Delete where the row number is > 1
+ALTER TABLE world_layoffs.layoffs ADD row_num INT;
+
+SELECT *
+FROM world_layoffs.layoffs
+;
+
+CREATE TABLE `world_layoffs`.`layoffs_staging` (
+`company` text,
+`location`text,
+`industry`text,
+`total_laid_off` INT,
+`percentage_laid_off` text,
+`date` text,
+`stage`text,
+`country` text,
+`funds_raised_millions` int,
+`row_num` INT
+);
+
+INSERT INTO `world_layoffs`.`layoffs_staging`
+(`company`,
+`location`,
+`industry`,
+`total_laid_off`,
+`percentage_laid_off`,
+`date`,
+`stage`,
+`country`,
+`funds_raised_millions`,
+`row_num`)
+SELECT `company`,
+`location`,
+`industry`,
+`total_laid_off`,
+`percentage_laid_off`,
+`date`,
+`stage`,
+`country`,
+`funds_raised_millions`,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs;
+
+DELETE FROM world_layoffs.layoffs_staging
+WHERE row_num >= 2;
+
+
+# 2. Standardize Data
+
+SELECT * 
+FROM world_layoffs.layoffs_staging;
+
+# null and empty rows
+SELECT DISTINCT industry
+FROM world_layoffs.layoffs_staging
+ORDER BY industry;
+
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE industry IS NULL 
+OR industry = ''
+ORDER BY industry;
+
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE company LIKE 'Bally%';
+
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE company LIKE 'airbnb%';
+
+#Let Fix what we saw
+UPDATE world_layoffs.layoffs_staging
+SET industry = NULL
+WHERE industry = '';
+
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE industry IS NULL 
+OR industry = ''
+ORDER BY industry;
+
+UPDATE layoffs_staging t1
+JOIN layoffs_staging t2
+ON t1.company = t2.company
+SET t1.industry = t2.industry
+WHERE t1.industry IS NULL
+AND t2.industry IS NOT NULL;
+
+#One is left null
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE industry IS NULL 
+OR industry = ''
+ORDER BY industry;
+
+
+#Crypto has different variations
+SELECT DISTINCT industry
+FROM world_layoffs.layoffs_staging
+ORDER BY industry;
+
+UPDATE layoffs_staging
+SET industry = 'Crypto'
+WHERE industry IN ('Crypto Currency', 'CryptoCurrency');
+
+SELECT DISTINCT industry
+FROM world_layoffs.layoffs_staging
+ORDER BY industry;
+
+SELECT *
+FROM world_layoffs.layoffs_staging;
+
+#We have a period
+SELECT DISTINCT country
+FROM world_layoffs.layoffs_staging
+ORDER BY country;
+
+UPDATE layoffs_staging
+SET country = TRIM(TRAILING '.' FROM country);
+
+SELECT DISTINCT country
+FROM world_layoffs.layoffs_staging
+ORDER BY country;
+
+#Convert text to date
+SELECT *
+FROM world_layoffs.layoffs_staging;
+
+UPDATE layoffs_staging
+SET `date` = STR_TO_DATE(`date`, '%m/%d/%Y');
+
+ALTER TABLE layoffs_staging
+MODIFY COLUMN `date` DATE;
+
+SELECT *
+FROM world_layoffs.layoffs_staging;
+
+
+
+# 3. Look at Null Values
+
+# We do not have enough information to fill in the left null so will leave them as they are
+
+# 4. remove any columns and rows we need to
+
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE total_laid_off IS NULL;
+
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
+
+# We are deleting because they dont have the data we are looking for
+DELETE FROM world_layoffs.layoffs_staging
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
+
+SELECT * 
+FROM world_layoffs.layoffs_staging;
+
+ALTER TABLE layoffs_staging
+DROP COLUMN row_num;
+
+SELECT * 
+FROM world_layoffs.layoffs_staging;
